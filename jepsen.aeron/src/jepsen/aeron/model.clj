@@ -2,39 +2,27 @@
   (:require [knossos.model :as model])
   (:import (knossos.model Model)))
 
-(defrecord AuctionModel [auctions]
+(defrecord AuctionModel [winner price]
   Model
   (step [this op]
-    (let [auction-id (case (:f op)
-                       :bid (first (:value op))
-                       :close (:value op)
-                       :create (:value op))]
-      (cond
-        ;; Only consider successful ops
-        (= :ok (:type op))
-        (case (:f op)
-          :create
-          (if (some #(= (:value %) auction-id) auctions)
-            (model/inconsistent (str "Duplicate create for auction: " auction-id))
-            (assoc this :auctions (conj auctions op)))
+    (let [f (:f op)
+          val (:value op)]
+      (case f
+        :bid
+        (if (:succeeded val)
+          (if (> (:price val) price)
+            (->AuctionModel (:id val) (:price val))
+            (model/inconsistent "Accepted bid not higher than winning price"))
+          (if (<= (:price val) price)
+            this
+            (model/inconsistent "Rejected bid higher than current price")))
 
-          :bid
-          (let [created? (some #(and (= (:f %) :create) (= (:value %) auction-id)) auctions)
-                closed?  (some #(and (= (:f %) :close) (= (:value %) auction-id)) auctions)]
-            (cond
-              (not created?) (model/inconsistent (str "Bid on missing auction: " auction-id))
-              closed?        (model/inconsistent (str "Bid on closed auction: " auction-id))
-              :else          (assoc this :auctions (conj auctions op))))
+        :status
+        (if (= (:price val) price)
+          this
+          (model/inconsistent "Status reported stale winning price"))
 
-          :close
-          (let [created? (some #(and (= (:f %) :create) (= (:value %) auction-id)) auctions)
-                closed?  (some #(and (= (:f %) :close) (= (:value %) auction-id)) auctions)]
-            (cond
-              (not created?)  (model/inconsistent (str "Close on missing auction: " auction-id))
-              closed?         (model/inconsistent (str "Duplicate close for auction: " auction-id))
-              :else           (assoc this :auctions (conj auctions op))))
+        this))))
 
-          this)
-
-        ;; Ignore non-:ok ops (e.g., :fail, :info)
-        :else this))))
+(defn auction-model []
+  (->AuctionModel -1 0))

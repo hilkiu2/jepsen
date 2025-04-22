@@ -1,24 +1,8 @@
-(ns jepsen.aeron.client
-  (:require [clojure.tools.logging :refer :all]
-            [clj-http.client :as http]
-            [jepsen.client :as client]))
-
-(def auction-ids (atom []))
-
-(defn create [_ _]
-  (let [id (str (java.util.UUID/randomUUID))]
-    (swap! auction-ids conj id)
-    {:type :invoke, :f :create, :value id}))
-
-(defn bid [_ _]
-  (let [auctions @auction-ids]
-    (when (seq auctions)
-      {:type :invoke, :f :bid, :value [(rand-nth auctions) (rand-int 100)]})))
-
-(defn close [_ _]
-  (let [auctions @auction-ids]
-    (when (seq auctions)
-      {:type :invoke, :f :close, :value (rand-nth auctions)})))
+(ns jepsen.aeron.client 
+    (:require [clojure.tools.logging :refer :all]
+              [clj-http.client :as http]
+              [jepsen.client :as client]
+              [cheshire.core :as json]))
 
 (defrecord Client [conn]
   client/Client
@@ -31,62 +15,69 @@
 
     (let [url (str "http://localhost:8080/health")
           response (http/get url {:throw-exceptions false})]
-      ;; (info "HTTP server health check response " (:body response))
-    )
+      (info "HTTP server health check response " (:body response)))
 
+    (let [url (str "http://localhost:8080/status")
+          response (http/get url {:throw-exceptions false})]
+      (info "HTTP server status response " (:body response)))
+    
     (assoc this :conn "http://localhost:8080"))
 
   (invoke! [this test op]
-    (let [url (:conn this)] 
+    (let [url (:conn this)]
       (case (:f op)
-        :create
-        (try
-          (let [item (:value op)
-                full-url (str url "/auction")]
-            ;; (info "Creating auction with item:" item "at" full-url)
-            (let [response (http/post full-url {:form-params {:item item}})]
-              ;; (info "Create response:" response)
-              (assoc op :type :ok :value item)))
-          (catch Exception e
-            (let [body (:body (ex-data e))]
-              (warn "Failed to create auction:" (.getMessage e))
-              (when body (warn "Response body:" body))
-              (assoc op :type :fail :error (or body (.getMessage e))))))
-
         :bid
         (try
-          (let [[id amount] (:value op)
-                full-url (str url "/auction/bid")]
-            ;; (info "Placing bid on auction:" id "with amount:" amount "at" full-url)
-            (let [response (http/post full-url {:form-params {:id id :amount amount}})]
-              ;; (info "Bid response:" (:body response))
-              (assoc op :type :ok :value [id amount])))
-         (catch Exception e
-          (let [body (:body (ex-data e))]
-            (warn "Failed to place bid:" (.getMessage e))
-            (when body (warn "Response body:" body))
-            (assoc op :type :fail :error (or body (.getMessage e))))))
-
-        :close
-        (try
-          (let [id (:value op)
-                full-url (str url "/auction/close")]
-            ;; (info "Closing auction with id:" id "at" full-url)
-            (let [response (http/post full-url {:form-params {:id id}})]
-              ;; (info "Close response:" (:body response))
-              (assoc op :type :ok :value id)))
+          (let [{:keys [id price succeeded]} (:value op)
+                full-url (str url "/bid")
+                params {:customerId id :price price}]
+            ;; (info "Placing bid on auction:" id "with price:" price "at" full-url)
+            (let [response (http/post full-url {:form-params params
+                                                :accept :json
+                                                :as :text})
+                  ;; _ (info "RAW JSON:" (:body response))     
+                  body (try
+                        (json/parse-string (:body response) true)
+                        (catch Exception e
+                          (warn "Failed to parse bid response JSON: " (.getMessage e))
+                          {:parse-error (.getMessage e)}))
+                  bid-succeed (:bidSucceed body)]
+              ;; (info "Sent bid request with" params)
+              ;; (info "Response body parsed as:" body)
+              (assoc op :type :ok
+                    :value {:id id :price price :succeeded bid-succeed})))
           (catch Exception e
-            (let [body (:body (ex-data e))]
-              (warn "Failed to close auction:" (.getMessage e))
-              (when body (warn "Response body:" body))
-              (assoc op :type :fail :error (or body (.getMessage e)))))))))
+            (let [ex (ex-data e)
+                  raw-body (:body ex)]
+              (warn "Failed to place bid: " (.getMessage e))
+              (when raw-body (warn "Raw error body: " raw-body))
+              (assoc op :type :fail :error (or raw-body (.getMessage e))))))
 
-  (teardown! [this test]
+        :status
+        (try
+          (let [full-url (str url "/status")
+                response (http/get full-url {:accept :json :as :text})
+                body (try
+                      (json/parse-string (:body response) true)
+                      (catch Exception e
+                        (warn "Failed to parse status JSON: " (.getMessage e))
+                        {:parse-error (.getMessage e)}))
+            {:keys [winningCustomerId winningPrice]} body]
+            ;; (info "Received status:" body)
+            (assoc op :type :ok :value {:id winningCustomerId :price winningPrice}))
+          (catch Exception e
+            (let [ex (ex-data e)
+                  raw-body (:body ex)]
+              (warn "Failed to get status:" (.getMessage e))
+              (when raw-body (warn "Raw error body:" raw-body))
+              (assoc op :type :fail :error (or raw-body (.getMessage e)))))))))
+
+
+  (teardown! [this test])
     ;; (ignore-errors (c/su (c/exec :pkill :-f "AuctionHttpServer")))
-  )
+  
 
-  (close! [this test]
+  (close! [this test]))
     ;; (info "Closing HTTP server")
     ;;   (ignore-errors (c/su (c/exec :pkill :-f "AuctionHttpServer")))
-  )
-)
+  

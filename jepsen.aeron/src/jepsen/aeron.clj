@@ -1,28 +1,12 @@
-;; (ns jepsen.aeron
-;;   (:require [jepsen.aeron.db :as db]
-;;             [jepsen.aeron.client :as client]
-;;             [jepsen.aeron.model :as model]
-;;             [clojure.tools.logging :refer :all]
-;;             [clojure.string :as str]
-;;             [jepsen [checker :as checker]
-;;                     [cli :as cli]
-;;                     [control :as c]
-;;                     [db :as db]
-;;                     [tests :as tests]
-;;                     [generator :as gen]
-;;                     [client :as client]]
-;;             [jepsen.control.util :as cu]
-;;             [jepsen.checker.timeline :as timeline]
-;;             [jepsen.os.debian :as debian]
-;;             [clj-http.client :as http]))
-
 (ns jepsen.aeron
   (:require [jepsen.aeron.client :as client]
             [jepsen.aeron.db :as db]
-            [jepsen.aeron.model :as model]
+            [jepsen.aeron.checker :as auction-checker]
+            [jepsen.aeron.model :as auction-model]
             [jepsen.checker :as checker]
             [jepsen.checker.timeline :as timeline]
             [jepsen.cli :as cli]
+            [jepsen.nemesis :as nemesis]
             [jepsen.generator :as gen]
             [jepsen.tests :as tests]))
 
@@ -30,24 +14,34 @@
   (merge tests/noop-test
          opts
          {:name "aeron"
-          :nodes ["node0.aeron-jepsen.cs598fts.emulab.net"]
+          :nodes ["node1.aeron-jepsen.cs598fts.emulab.net"]
           :pure-generators true
           :db (db/db "v1.47.4")
+          :leave-db-running? false
           :client (client/->Client nil)
-          :generator (->> (gen/mix [
-                            (fn [_ _] (or (client/create nil nil) nil))
-                            (fn [_ _] (or (client/bid nil nil) nil))
-                            (fn [_ _] (or (client/close nil nil) nil))])
-                (gen/stagger 1)
-                (gen/time-limit 15))
+          :generator (gen/phases
+                      (->> (gen/mix [
+                              (fn [_ _]
+                                {:type :invoke
+                                :f    :bid
+                                :value {:id    (+ 1 (rand-int 10))       ; id ∈ [1, 10]
+                                        :price (+ 100 (rand-int 200))}})
 
-          ;; :checker (checker/compose
-          ;;            {:linear (checker/linearizable
-          ;;                       {:model (->model/AuctionModel #{})
-          ;;                        :algorithm :linear})
-          ;;             :perf (checker/perf)
-          ;;             :timeline (timeline/html)})
-                      }))
+                              (fn [_ _]
+                                {:type :invoke
+                                :f    :status
+                                :value nil})])
+                          (gen/clients)
+                          (gen/stagger 0.3)
+                          (gen/time-limit 15)))
+          :checker (checker/compose
+                     {
+                      ;; :auction   (auction-checker/auction-checker)
+                      :linear (checker/linearizable {:model (auction-model/auction-model)})
+                      :perf      (checker/perf)
+                      :timeline  (timeline/html)
+                      })
+          }))
 
 (defn -main
   "Handles command line arguments. Can either run a test, or a web server for

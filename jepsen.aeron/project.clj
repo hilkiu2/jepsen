@@ -5,5 +5,14 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :main jepsen.aeron
   :dependencies [[org.clojure/clojure "1.10.0"]
-                [jepsen "0.2.1-SNAPSHOT"]
-                [clj-http "3.12.3"]])
+                 [jepsen "0.2.1-SNAPSHOT"
+                  :exclusions [org.slf4j/slf4j-log4j12
+                               log4j/log4j
+                               org.slf4j/log4j-over-slf4j]]
+                 [clj-http "3.12.3"]
+                 [cheshire "5.11.0"]
+                 [knossos "0.3.6"
+                  :exclusions [org.slf4j/slf4j-log4j12
+                               log4j/log4j
+                               org.slf4j/log4j-over-slf4j]]
+])
