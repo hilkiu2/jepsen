@@ -96,7 +96,7 @@
 ;;   (info "Starting Aeron node" node-id)
 ;;   (c/cd "/users/hilkiu2/aeron/aeron-samples/scripts/cluster"
 ;;     (c/exec :bash :-c
-;;             (str "echo '\"[$(date)]\" Starting node " node-id "' >> /users/hilkiu2/aeron/cluster.log; JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 PATH=$JAVA_HOME/bin:$PATH ./basic-auction-cluster " node-id " >> /users/hilkiu2/aeron/cluster.log 2>> /users/hilkiu2/aeron/cluster.err"))))
+;;             (str "echo '\"[$(date)]\" Starting node " node-id "' >> /users/hilkiu2/aeron/cluster.log; JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 PATH=$JAVA_HOME/bin:$PATH ./basic-kv-cluster " node-id " >> /users/hilkiu2/aeron/cluster.log 2>> /users/hilkiu2/aeron/cluster.err"))))
 
 (defn start-node! [node-id]
   (let [node "node1.aeron-jepsen.cs598fts.emulab.net"
@@ -106,7 +106,7 @@
         run-cmd (str "echo '\"[$(date)]\" Starting node " node-id "' >> " log-path "; "
                      "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 "
                      "PATH=$JAVA_HOME/bin:$PATH "
-                     "./basic-auction-cluster " node-id
+                     "./basic-kv-cluster " node-id
                      " >> " log-path " 2>> " err-path " &")]
 
     (info "🚀 Starting Aeron node" node-id)
@@ -153,8 +153,8 @@
     (setup! [_ test node]
       ;; (info "** Setting up Aeron" version "**")
         (c/cd "/users/hilkiu2/aeron"          
-          (ignore-errors (c/exec :bash :-c "pkill -f 'AuctionHttpServer' || true"))
-          (ignore-errors (c/exec :bash :-c "pkill -f 'basic-auction-cluster' || true"))
+          (ignore-errors (c/exec :bash :-c "pkill -f 'KVHttpServer' || true"))
+          (ignore-errors (c/exec :bash :-c "pkill -f 'basic-kv-cluster' || true"))
           (ignore-errors (c/exec :bash :-c "rm -rf /dev/shm/aeron-*"))
           (c/exec :bash :-c "rm -rf /users/hilkiu2/aeron/aeron-samples/scripts/cluster/node*")
           (c/exec :bash :-c "rm -rf /users/hilkiu2/aeron/aeron-samples/scripts/cluster/logs")
@@ -167,8 +167,8 @@
 
           (info "...Running the CLUSTER")
           (c/cd "/users/hilkiu2/aeron/aeron-samples/scripts/cluster"
-            (c/exec :bash :-c "echo '\nRunning cluster... ' >> /users/hilkiu2/aeron/cluster.log && echo '\nRunning cluster... ' >> /users/hilkiu2/aeron/cluster.err && export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64; export PATH=$JAVA_HOME/bin:$PATH; bash -c ./basic-auction-cluster >> /users/hilkiu2/aeron/cluster.log 2>> /users/hilkiu2/aeron/cluster.err &"))
-            ;; (c/exec :bash :-c "echo \"[$(date)]\" > /users/hilkiu2/aeron/cluster.pids && ps aux | grep 'basic-auction-cluster' | grep -v grep | awk '{print $2}' >> /users/hilkiu2/aeron/cluster.pids"))
+            (c/exec :bash :-c "echo '\nRunning cluster... ' >> /users/hilkiu2/aeron/cluster.log && echo '\nRunning cluster... ' >> /users/hilkiu2/aeron/cluster.err && export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64; export PATH=$JAVA_HOME/bin:$PATH; bash -c ./basic-kv-cluster >> /users/hilkiu2/aeron/cluster.log 2>> /users/hilkiu2/aeron/cluster.err &"))
+            ;; (c/exec :bash :-c "echo \"[$(date)]\" > /users/hilkiu2/aeron/cluster.pids && ps aux | grep 'basic-kv-cluster' | grep -v grep | awk '{print $2}' >> /users/hilkiu2/aeron/cluster.pids"))
 
           (c/exec :sleep "60")
 
@@ -193,19 +193,19 @@
           (info "...Running the HTTP SERVER")
           
           (c/exec :chmod "+x" "~/setup-http.sh")
-          (c/exec :bash "~/setup-http.sh")
-          ;; (c/exec :bash :-c "echo \"[$(date)]\" > /users/hilkiu2/aeron/httpServer.pids && pgrep -f 'AuctionHttpServer' >> /users/hilkiu2/aeron/httpServer.pids")
+          (c/exec :bash "~/setup-kv-http.sh")
+          ;; (c/exec :bash :-c "echo \"[$(date)]\" > /users/hilkiu2/aeron/httpServer.pids && pgrep -f 'KVHttpServer' >> /users/hilkiu2/aeron/httpServer.pids")
         )
     )
     (teardown! [_ test node]
       (info "Tearing down Aeron on" node)
 
       (ignore-errors
-        (ignore-errors (c/exec :bash :-c "pkill -f AuctionHttpServer || true")))
+        (ignore-errors (c/exec :bash :-c "pkill -f KVHttpServer || true")))
       (ignore-errors
-        (c/exec :bash :-c "pkill -f basic-auction-cluster || true"))
+        (c/exec :bash :-c "pkill -f basic-kv-cluster || true"))
       (ignore-errors
-              (c/exec :bash :-c "pkill -f BasicAuctionClusteredServiceNode || true"))
+              (c/exec :bash :-c "pkill -f BasicKVClusteredServiceNode || true"))
         
       (c/exec :sleep "10")
 
