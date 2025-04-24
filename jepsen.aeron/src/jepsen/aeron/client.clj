@@ -7,21 +7,21 @@
 (defrecord Client [conn]
   client/Client
   (open! [this test node]
-    (assoc this :conn (str "http://" node ":8080")))
+    (assoc this :conn (str "http://" node ":8081")))
 
   (setup! [this test]
-    ;; (info "Waiting 30 seconds to allow HTTP server to bind to port 8080...")
+    ;; (info "Waiting 30 seconds to allow HTTP server to bind to port 8081...")
     (Thread/sleep 30000)
 
-    (let [url (str "http://localhost:8080/health")
+    (let [url (str "http://localhost:8081/health")
           response (http/get url {:throw-exceptions false})]
       (info "HTTP server health check response " (:body response)))
 
-    (let [url (str "http://localhost:8080/status")
+    (let [url (str "http://localhost:8081/status")
           response (http/get url {:throw-exceptions false})]
       (info "HTTP server status response " (:body response)))
     
-    (assoc this :conn "http://localhost:8080"))
+    (assoc this :conn "http://localhost:8081"))
 
   (invoke! [this test op]
     (let [url (:conn this)]
