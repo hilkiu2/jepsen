@@ -11,141 +11,47 @@
      (catch Throwable t#
        (warn "Command failed:" '~body "\nReason:" (.getMessage t#)))))
 
-(defn leader-id []
-  (let [output (-> (c/exec :bash :-c
-                           (str "java --add-opens java.base/jdk.internal.misc=ALL-UNNAMED "
-                                "-cp '/users/hilkiu2/aeron/libs/*' "
-                                "io.aeron.cluster.ClusterTool /users/hilkiu2/aeron/aeron-samples/scripts/cluster/node0/cluster list-members"))
-                   :out)]
-    (when-let [match (re-find #"leaderMemberId=(\d+)" output)]
-      (Integer/parseInt (second match)))))
-
-(defn wait-for-leader!
-  ([] (wait-for-leader! 120)) ; default timeout: 60s
-  ([max-wait]
-   (loop [i 0]
-     (if-let [leader (leader-id)]
-       (do
-         (info "Found leader node:" leader)
-         leader)
-       (do
-         (when (>= i max-wait)
-           (throw (ex-info "Timed out waiting for Aeron leader" {:wait-time max-wait})))
-         (Thread/sleep 1000)
-         (recur (inc i)))))))
-
-;; (defn pid-of-node [node-id]
-;;   (info "Attempting to get pid of node: " node-id)
-;;   (let [output (-> (c/exec :bash :-c
-;;                            (str "java --add-opens java.base/jdk.internal.misc=ALL-UNNAMED "
-;;                                 "-cp '/users/hilkiu2/aeron/libs/*' "
-;;                                 "io.aeron.cluster.ClusterTool /users/hilkiu2/aeron/aeron-samples/scripts/cluster/node" node-id "/cluster pid"))
-;;                    :out)]
-;;     (info "Output: " output)
-;;     (Integer/parseInt (str/trim output))))
-
 (defn pid-of-node [node-id]
-  (let [node "node1.aeron-jepsen.cs598fts.emulab.net"
-        cmd  (str "java --add-opens java.base/jdk.internal.misc=ALL-UNNAMED "
-                  "-cp '/users/hilkiu2/aeron/libs/*' "
-                  "io.aeron.cluster.ClusterTool /users/hilkiu2/aeron/aeron-samples/scripts/cluster/node" node-id "/cluster pid")]
-    (info "🔍 Running PID command on" node ": " cmd)
-    (try
-      (c/on node
-        (info "🧾 Checking if node directory exists for node" node-id)
-        (c/on node
-          (c/exec :ls :-l (str "/users/hilkiu2/aeron/aeron-samples/scripts/cluster/node" node-id "/cluster")))
+   (let [cmd (str "ps aux | grep '[B]asicKVClusteredServiceNode' | grep 'nodeId=" node-id "' | awk '{print $2}'")
+        result (c/exec :bash :-c cmd)]
+    (-> result :out str/trim))
+  )
 
-
-        (let [output (-> (c/exec :bash :-c cmd) :out)]
-          (info "📥 PID command output:" (pr-str output))
-          (if (str/blank? output)
-            (do
-              (warn "⚠️  PID output was blank for node" node-id)
-              (throw (ex-info "PID output was blank" {:node-id node-id :node node})))
-            (try
-              (Integer/parseInt (str/trim output))
-              (catch NumberFormatException e
-                (warn "🚫 Failed to parse PID from output:" (pr-str output))
-                (throw e))))))
-      (catch Exception e
-        (warn e "💥 Exception in pid-of-node for node" node-id)
-        (.printStackTrace e)
-        (throw e)))))
-
-
-;; (defn pid-of-node [node-id]
-;;   (let [node "node1.aeron-jepsen.cs598fts.emulab.net"]
-;;     (c/on node
-;;       (let [output (-> (c/exec :bash :-c
-;;                                (str "java --add-opens java.base/jdk.internal.misc=ALL-UNNAMED "
-;;                                     "-cp '/users/hilkiu2/aeron/libs/*' "
-;;                                     "io.aeron.cluster.ClusterTool /users/hilkiu2/aeron/aeron-samples/scripts/cluster/node" node-id "/cluster pid"))
-;;                        :out)]
-;;         (info "Output: " output)
-;;         (Integer/parseInt (str/trim output))))))
+(defn latest-leader-node-id []
+  (let [log-path "/users/hilkiu2/aeron/cluster.log"
+        cmd (str "tac " log-path
+                 " | grep -m1 'CANDIDATE -> LEADER'"
+                 " | sed -n 's/.*memberId=\\([0-9]\\+\\).*/\\1/p'")
+        result (c/exec :bash :-c cmd)]
+    (-> result :out str/trim)))
 
 (defn stop-leader! []
-  (when-let [leader (leader-id)]
+  (when-let [leader (latest-leader-node-id)]
     (let [pid (pid-of-node leader)]
-      (info "Killing leader node" leader "with PID" pid)
+      (info "Killing leader node" leader "with PID " pid)
       (c/exec :kill pid)
       leader)))
 
-;; (defn start-node! [node-id]
-;;   (info "Starting Aeron node" node-id)
-;;   (c/cd "/users/hilkiu2/aeron/aeron-samples/scripts/cluster"
-;;     (c/exec :bash :-c
-;;             (str "echo '\"[$(date)]\" Starting node " node-id "' >> /users/hilkiu2/aeron/cluster.log; JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 PATH=$JAVA_HOME/bin:$PATH ./basic-kv-cluster " node-id " >> /users/hilkiu2/aeron/cluster.log 2>> /users/hilkiu2/aeron/cluster.err"))))
-
 (defn start-node! [node-id]
-  (let [node "node1.aeron-jepsen.cs598fts.emulab.net"
-        log-path "/users/hilkiu2/aeron/cluster.log"
+  (let [log-path "/users/hilkiu2/aeron/cluster.log"
         err-path "/users/hilkiu2/aeron/cluster.err"
-        pid-path (str "/users/hilkiu2/aeron/nodes/node" node-id ".pid")
+        node "node1.aeron-jepsen.cs598fts.emulab.net"
+        pid (pid-of-node node-id)
         run-cmd (str "echo '\"[$(date)]\" Starting node " node-id "' >> " log-path "; "
-                     "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 "
-                     "PATH=$JAVA_HOME/bin:$PATH "
                      "./basic-kv-cluster " node-id
                      " >> " log-path " 2>> " err-path " &")]
 
-    (info "🚀 Starting Aeron node" node-id)
+    (info "Restarting node " node-id " with resolved PID " pid)
     (c/on node
-      ;; Ensure PID dir exists
-      (c/exec :mkdir :-p "/users/hilkiu2/aeron/nodes")
-
-      ;; Run the cluster script
       (c/cd "/users/hilkiu2/aeron/aeron-samples/scripts/cluster"
-        (c/exec :bash :-c run-cmd))
+        (c/exec :bash :-c run-cmd)))))
 
-      ;; Give it time to spin up
-      (c/exec :sleep "5")
-
-      ;; Retrieve and write the PID to file
-      (let [pid (pid-of-node node-id)]
-        (c/exec :bash :-c (str "echo " pid " > " pid-path))
-        (info "✅ Wrote PID" pid "to" pid-path)))))
-
-
-(defn kill-node! [node-id]
-  (let [pid-path (str "/users/hilkiu2/aeron/nodes/node" node-id ".pid")]
-    (try
-      (let [pid-str (-> (c/exec :bash :-c (str "cat " pid-path)) :out str/trim)]
-        (info "🛑 Killing node" node-id "with PID from file:" pid-str)
-        (c/exec :kill :-9 pid-str))
-      (catch Exception e
-        (warn "Failed to kill node" node-id ":" (.getMessage e))))))
-
-
-
-;; (defn kill-node! [node-id]
-;;   (info "Attempting to kill node: " node-id)
-;;   (try
-;;     (let [pid (pid-of-node node-id)]
-;;       (info "Killing node" node-id "with PID" pid)
-;;       (c/exec :kill :-9 pid))
-;;     (catch Exception e
-;;       (warn "Failed to kill node" node-id ":" (.getMessage e)))))
+(defn kill-node! [node-id nodehostname]
+  (let [pid (pid-of-node node-id)]
+    (info "Killing node " node-id " with PID " pid)
+    (c/on nodehostname
+      (c/exec :kill :-9 pid)
+      (c/exec :sleep "2"))))
 
 (defn db [version]
   (reify 
@@ -168,33 +74,15 @@
           (info "...Running the CLUSTER")
           (c/cd "/users/hilkiu2/aeron/aeron-samples/scripts/cluster"
             (c/exec :bash :-c "echo '\nRunning cluster... ' >> /users/hilkiu2/aeron/cluster.log && echo '\nRunning cluster... ' >> /users/hilkiu2/aeron/cluster.err && export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64; export PATH=$JAVA_HOME/bin:$PATH; bash -c ./basic-kv-cluster >> /users/hilkiu2/aeron/cluster.log 2>> /users/hilkiu2/aeron/cluster.err &"))
-            ;; (c/exec :bash :-c "echo \"[$(date)]\" > /users/hilkiu2/aeron/cluster.pids && ps aux | grep 'basic-kv-cluster' | grep -v grep | awk '{print $2}' >> /users/hilkiu2/aeron/cluster.pids"))
 
           (c/exec :sleep "60")
-
-          ;; (c/exec :mkdir :-p "/users/hilkiu2/aeron/nodes")
-          ;; (let [pid (pid-of-node 0) ; get PID using your function
-          ;;       pid-path (str "/users/hilkiu2/aeron/nodes/node0.pid")]
-          ;;   (c/exec :bash :-c (str "echo " pid " > " pid-path))
-          ;;   (info "✅ Wrote PID" pid "to" pid-path))
-          ;; (let [pid (pid-of-node 1) ; get PID using your function
-          ;;       pid-path (str "/users/hilkiu2/aeron/nodes/node1.pid")]
-          ;;   (c/exec :bash :-c (str "echo " pid " > " pid-path))
-          ;;   (info "✅ Wrote PID" pid "to" pid-path))
-          ;; (let [pid (pid-of-node 2) ; get PID using your function
-          ;;       pid-path (str "/users/hilkiu2/aeron/nodes/node2.pid")]
-          ;;   (c/exec :bash :-c (str "echo " pid " > " pid-path))
-          ;;   (info "✅ Wrote PID" pid "to" pid-path))
-
-
-          ;; (wait-for-leader!)
 
           ;; HTTP
           (info "...Running the HTTP SERVER")
           
           (c/exec :chmod "+x" "~/setup-http.sh")
           (c/exec :bash "~/setup-kv-http.sh")
-          ;; (c/exec :bash :-c "echo \"[$(date)]\" > /users/hilkiu2/aeron/httpServer.pids && pgrep -f 'KVHttpServer' >> /users/hilkiu2/aeron/httpServer.pids")
+          (c/exec :sleep "60")
         )
     )
     (teardown! [_ test node]
@@ -205,7 +93,7 @@
       (ignore-errors
         (c/exec :bash :-c "pkill -f basic-kv-cluster || true"))
       (ignore-errors
-              (c/exec :bash :-c "pkill -f BasicKVClusteredServiceNode || true"))
+        (c/exec :bash :-c "pkill -f BasicKVClusteredServiceNode || true"))
         
       (c/exec :sleep "10")
 
@@ -231,15 +119,7 @@
       ;;     (info label "Clean")
       ;;     (warn label "Still present! " result))))
     )
-
-    ;; db/Kill
-    ;; (start! [test node]
-    ;;   (start-node! node)
-    ;;   (c/exec :sleep "2"))
-
-    ;; (kill! [test node]
-    ;;   (kill-node! node))
-
+    
     db/LogFiles
     (log-files [_ test node]
     ["/users/hilkiu2/aeron/aeron-samples/scripts/cluster/logs/cluster-0.log"

@@ -2,8 +2,8 @@
   (:require [jepsen.aeron.client :as client]
             [jepsen.aeron.db :as db]
             [jepsen.control :as c]
-            [jepsen.aeron.checker :as auction-checker]
-            [jepsen.aeron.model :as auction-model]
+            [jepsen.aeron.checker :as kv-checker]
+            [jepsen.aeron.model :as kv-model]
             [jepsen.aeron.nemesis :as aeron-nemesis]
             [jepsen.checker :as checker]
             [jepsen.checker.timeline :as timeline]
@@ -21,34 +21,24 @@
           :pure-generators true
           :db (db/db "v1.47.4")
           :leave-db-running? false
-          :concurrency 10 
+          ;; :concurrency 10 
           :client (client/->Client nil)
-          :nemesis (nemesis/partition-random-halves) ;; Used to soley test network partitions
+          ;; :nemesis (nemesis/partition-random-halves) ;; Used to soley test network partitions
           ;; :nemesis (aeron-nemesis/slow-wrapper (nemesis/partition-random-halves) "enp6s7" 0.5) ;; Used to test network partitions under a 0.5 sec delay
           ;; :nemesis (aeron-nemesis/startstop 1)
           :generator (gen/phases
-                        (->> (gen/mix [
-                                (fn [_ _]
-                                  {:type :invoke
-                                  :f    :bid
-                                  :value {:id    (+ 1 (rand-int 10))       ;1-10
-                                          :price (+ 1 (rand-int 10000000))}})  ;1-10,000,000
-
-                                (fn [_ _]
-                                  {:type :invoke
-                                  :f    :status
-                                  :value nil})])
+                        (->> (gen/mix [client/put, client/get, client/delete, client/cas])
                             (gen/clients)
-                            (gen/nemesis
-                              (->> (cycle [{:type :info, :f :start}
-                                           (gen/sleep 5)
-                                           {:type :info, :f :stop}
-                                           (gen/sleep 5)])
-                                   (take 20)))
-                            (gen/stagger 1/500)
+          ;;                   (gen/nemesis
+          ;;                     (->> (cycle [{:type :info, :f :start}
+          ;;                                  (gen/sleep 5)
+          ;;                                  {:type :info, :f :stop}
+          ;;                                  (gen/sleep 5)])
+          ;;                          (take 20)))
+                            (gen/stagger 1)
                             (gen/time-limit (:time-limit opts))))
           :checker (checker/compose 
-                    { :linear (checker/linearizable {:model (auction-model/auction-model)})
+                    { :linear (checker/linearizable {:model (kv-model/kv-model)})
                       :perf      (checker/perf)
                       :timeline  (timeline/html) })
           }))
