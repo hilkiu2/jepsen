@@ -4,21 +4,24 @@
               [jepsen.client :as client]
               [cheshire.core :as json]))
 
-(def winning-price (atom 0))
+(def winning-prices (atom {}))
 
 (defn bid []
   (fn [_ _]
-    (let [current-winning-price @winning-price]
+    (let [item-id (+ 1 (rand-int 10))
+          current-price (get @winning-prices item-id 0)
+          increment (+ 1 (rand-int 10))]
       {:type :invoke
        :f :bid
-       :value {:id (+ 1 (rand-int 50))
-               :price (+ current-winning-price (rand-int 10))}})))
+       :value {:id item-id
+               :price (+ current-price increment)}})))
 
-(defn status []
+(defn item []
   (fn [_ _]
     {:type :invoke
-     :f    :status
-     :value nil}))
+     :f    :item
+     :value {
+        :id (+ 1 (rand-int 10))}}))
 
 (defrecord Client [conn]
   client/Client
@@ -32,10 +35,6 @@
     (let [url (str "http://localhost:8081/health")
           response (http/get url {:throw-exceptions false})]
       (info "HTTP server health check response " (:body response)))
-
-    (let [url (str "http://localhost:8081/status")
-          response (http/get url {:throw-exceptions false})]
-      (info "HTTP server status response " (:body response)))
     
     (assoc this :conn "http://localhost:8081"))
 
@@ -46,16 +45,18 @@
       (try
         (let [{:keys [id price]} (:value op)
               full-url (str url "/bid")
-              params {:customerId id :price price}]
+              params {:itemId id :price price}]
           (let [response (http/post full-url {:form-params params :accept :json :as :text})
                 body (try
                       (json/parse-string (:body response) true)
                       (catch Exception e
                         (warn "Failed to parse bid response JSON: " (.getMessage e))
                         {:parse-error (.getMessage e)}))
-                bid-succeed (:bidSucceed body)]
-            (assoc op :type :ok
-                  :value {:id id :price price :succeeded bid-succeed})))
+                {:keys [itemId price success]} body]
+            (do
+              (swap! winning-prices assoc itemId price)
+              (assoc op :type :ok
+                    :value {:id itemId :price price :succeeded success}))))
         (catch clojure.lang.ExceptionInfo e
           (let [data (ex-data e)
                 status (:status data)]
@@ -64,31 +65,48 @@
               (do (warn "Failed to place bid:" (.getMessage e))
                   (assoc op :type :fail :error :unknown)))))
         (catch Exception e
-          (warn "Unknown failure placing bid:" (.getMessage e))
-          (assoc op :type :fail :error :unknown)))
+          (do
+            (warn "Exception caught placing bid: " (.getMessage e))
+            (if (instance? clojure.lang.ExceptionInfo e)
+              (let [data (ex-data e)
+                    status (:status data)]
+                (if (= status 504)
+                  (assoc op :type :fail :error :timeout)
+                  (assoc op :type :fail :error :unknown)))
+              (assoc op :type :fail :error :unknown)))))
 
-        :status
+        :item
         (try
-          (let [full-url (str url "/status")
-                response (http/get full-url {:accept :json :as :text})
-                body (try
-                      (json/parse-string (:body response) true)
-                      (catch Exception e
-                        (warn "Failed to parse status JSON: " (.getMessage e))
-                        {:parse-error (.getMessage e)}))
-                {:keys [winningCustomerId winningPrice]} body]
-            (reset! winning-price winningPrice)
-            (assoc op :type :ok :value {:id winningCustomerId :price winningPrice}))
+          (let [{:keys [id]} (:value op)
+                full-url (str url "/item")
+                params {:itemId id}]
+            (let [response (http/get full-url {:query-params params :accept :json :as :text})
+                  body (try
+                        (json/parse-string (:body response) true)
+                        (catch Exception e
+                          (warn "Failed to parse item response JSON: " (.getMessage e))
+                          {:parse-error (.getMessage e)}))
+                  {:keys [itemId price success]} body]
+              (do
+                (swap! winning-prices assoc itemId price)
+                (assoc op :type :ok :value {:id itemId :price price :succeeded success}))))
           (catch clojure.lang.ExceptionInfo e
             (let [data (ex-data e)
                   status (:status data)]
               (if (= status 504)
                 (assoc op :type :fail :error :timeout)
-                (do (warn "Failed to place bid:" (.getMessage e))
+                (do (warn "Failed to query item:" (.getMessage e))
                     (assoc op :type :fail :error :unknown)))))
           (catch Exception e
-            (warn "Unknown failure placing bid:" (.getMessage e))
-            (assoc op :type :fail :error :unknown))))))
+            (do
+              (warn "Unknown failure querying item:" (.getMessage e))
+              (if (instance? clojure.lang.ExceptionInfo e)
+                (let [data (ex-data e)
+                      status (:status data)]
+                  (if (= status 504)
+                    (assoc op :type :fail :error :timeout)
+                    (assoc op :type :fail :error :unknown)))
+                (assoc op :type :fail :error :unknown))))))))
 
   (teardown! [this test])  
 
