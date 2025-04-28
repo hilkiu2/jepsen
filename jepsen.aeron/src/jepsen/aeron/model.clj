@@ -1,5 +1,6 @@
 (ns jepsen.aeron.model
-  (:require [knossos.model :as model])
+  (:require [knossos.model :as model]
+            [clojure.tools.logging :refer :all])
   (:import (knossos.model Model)))
 
 (defrecord AuctionModel [items]
@@ -9,27 +10,26 @@
           val (:value op)]
       (case f
         :bid
-        (let [item-id (:itemId val)
-              winning-price (:price val)
-              success (:success val)
-              current-price (get items item-id 0)]
-          (if success
-            (if (>= winning-price current-price)
-              ;; Update model to reflect new winning price
-              (->AuctionModel (assoc items item-id winning-price))
-              ;; Server claims success but price went backwards??
-              (model/inconsistent (str "Accepted bid lowered price for item " item-id
-                                       ": old price " current-price
-                                       ", reported new winning price " winning-price)))
-            ;; Bid failed: should have failed because price too low
-            (if (<= winning-price current-price)
-              this
-              (model/inconsistent (str "Rejected bid incorrectly for item " item-id
-                                       ": winning price " current-price
-                                       ", reported price " winning-price)))))
-
+        (let [item-id (:id val)
+              stored-price (get items item-id 0)
+              given-price (:price val)
+              succeeded (:succeeded val)]
+                (if succeeded
+                  (do
+                    (if (> given-price stored-price)
+                      (->AuctionModel (assoc items item-id given-price))
+                      (model/inconsistent (str "Accepted bid lowered price for item " item-id
+                                              ": old price " stored-price
+                                              ", reported new winning price " given-price))))
+                  (do
+                    (if (<= given-price stored-price)
+                      this
+                      (model/inconsistent (str "Rejected bid incorrectly for item " item-id
+                                              ": winning price " stored-price
+                                              ", reported price " given-price))))))
+        
         :item
-        (let [item-id (:itemId val)
+        (let [item-id (:id val)
               winning-price (:price val)
               current-price (get items item-id 0)]
           (if (= winning-price current-price)
