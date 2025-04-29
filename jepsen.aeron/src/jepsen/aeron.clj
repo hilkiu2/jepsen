@@ -29,13 +29,13 @@
           :generator (gen/phases
                         (->>  (gen/mix [ (repeat 8 client/bid) (repeat 2 client/status)])
                               (gen/clients)
-                              (gen/nemesis
-                                (->> (cycle [{:type :info, :f :start}
-                                            (gen/sleep 5)
-                                            {:type :info, :f :stop}
-                                            (gen/sleep 5)])
-                                    ;; (take 20)
-                                    ))
+                              ;; (gen/nemesis
+                              ;;   (->> (cycle [{:type :info, :f :start}
+                              ;;               (gen/sleep 5)
+                              ;;               {:type :info, :f :stop}
+                              ;;               (gen/sleep 5)])
+                              ;;       ;; (take 20)
+                              ;;       ))
                               (gen/stagger 1/10)
                               (gen/time-limit (:time-limit opts))))
           :checker (checker/compose 
