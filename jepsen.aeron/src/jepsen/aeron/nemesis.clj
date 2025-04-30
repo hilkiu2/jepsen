@@ -1,8 +1,9 @@
 (ns jepsen.aeron.nemesis
   (:require [jepsen.control :as c]
-            [jepsen.nemesis :as jNemesis]
+            [jepsen.nemesis :as nemesis]
             [jepsen.generator :as gen]
-            [jepsen.aeron.db :as aeron-db]))
+            [jepsen.aeron.db :as aeron-db]
+            [jepsen.net :as net]))
 
 (defn fast-net!
   [test iface]
@@ -23,28 +24,28 @@
       (c/su (c/exec :tc :qdisc :add :dev iface :root :netem :delay
                     (str mean "ms") (str variance "ms") :distribution distribution)))))
 
-(defn slow-wrapper
+(defn slowing
   [nem iface dt]
-  (reify jNemesis/Nemesis
+  (reify nemesis/Nemesis
     (setup! [this test]
       (fast-net! test iface)
-      (jNemesis/setup! nem test)
+      (nemesis/setup! nem test)
       this)
 
     (invoke! [this test op]
       (case (:f op)
         :start (do (slow-net! test iface {:mean (* dt 1000)})
-                   (jNemesis/invoke! nem test op))
+                   (nemesis/invoke! nem test op))
 
         :stop  (try
-                 (jNemesis/invoke! nem test op)
+                 (nemesis/invoke! nem test op)
                  (finally (fast-net! test iface)))
 
-        (jNemesis/invoke! nem test op)))
+        (nemesis/invoke! nem test op)))
 
     (teardown! [this test]
       (fast-net! test iface)
-      (jNemesis/teardown! nem test))))
+      (nemesis/teardown! nem test))))
 
 ;; Taken from cockroachDB's jepsen tests: https://github.com/jepsen-io/jepsen/blob/461235a04f2e9d28c8deb3c89d394dbc622f46cb/cockroachdb/src/jepsen/cockroach/nemesis.clj#L152
 (def nemesis-delay 5) ; seconds
@@ -132,24 +133,24 @@
 ;;       {:nemesis nemesis
 ;;        :generator gen})))
 
-(defn startstop
-  [n]
-  (let [target-nodes (comp (partial take n) shuffle)]
-    (reify jepsen.nemesis/Nemesis
-      (setup! [this _] this)
-      (teardown! [_ _] nil)
-      (invoke! [_ test op]
-        (case (:f op)
-          :start
-          (let [node (rand-int 3)]
-          ;; (let [node (first (target-nodes (:nodes test)))]
-            (aeron-db/kill-node! node)
-            ;; Inject chosen node into op so stop can reuse it
-            (assoc op :value node))
+;; (defn startstop
+;;   [n]
+;;   (let [target-nodes (comp (partial take n) shuffle)]
+;;     (reify jepsen.nemesis/Nemesis
+;;       (setup! [this _] this)
+;;       (teardown! [_ _] nil)
+;;       (invoke! [_ test op]
+;;         (case (:f op)
+;;           :start
+;;           (let [node (rand-int 3)]
+;;           ;; (let [node (first (target-nodes (:nodes test)))]
+;;             (aeron-db/kill-node! node)
+;;             ;; Inject chosen node into op so stop can reuse it
+;;             (assoc op :value node))
 
-          :stop
-          (let [node (:value op)] ;; use the same node from :start
-            (aeron-db/start-node! node)
-            (assoc op :value node))
+;;           :stop
+;;           (let [node (:value op)] ;; use the same node from :start
+;;             (aeron-db/start-node! node)
+;;             (assoc op :value node))
 
-          op)))))
+;;           op)))))

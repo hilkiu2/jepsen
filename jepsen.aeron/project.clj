@@ -4,7 +4,7 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :main jepsen.aeron
-  :jvm-opts ["-Xmx6g"]
+  :jvm-opts ["-Xmx8g" "-Xms512m"]
   :dependencies [[org.clojure/clojure "1.10.0"]
                  [jepsen "0.2.1-SNAPSHOT"
                   :exclusions [org.slf4j/slf4j-log4j12

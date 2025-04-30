@@ -44,7 +44,7 @@
 (defn start-node! [node-id]
   (let [log-path "/users/hilkiu2/aeron/cluster.log"
         err-path "/users/hilkiu2/aeron/cluster.err"
-        node "node1.aeron-jepsen.cs598fts.emulab.net"
+        node "node0.hilkiu2-255833.cs598fts-pg0.utah.cloudlab.us"
         pid (pid-of-node node-id)
         run-cmd (str "echo '\"[$(date)]\" Starting node " node-id "' >> " log-path "; "
                      "./basic-auction-cluster " node-id
