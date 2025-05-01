@@ -12,10 +12,14 @@
     (let [
           ;; item-id (rand-int 10)
           current-price (get @winning-prices item-id 0)
-          increment (+ 1 (rand-int 5))]
+          ;; increment (+ 1 (rand-int 5))]
+          increment (- 2 (rand-int 5))
+          value (if (> increment 0)
+                     (+ current-price increment)
+                     current-price)]
       {:type :invoke
        :f :bid
-       :value (+ current-price increment)})))
+       :value value})))
 
 (defn item [item-id]
   (fn [_ _]

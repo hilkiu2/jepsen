@@ -5,7 +5,7 @@
             [jepsen.aeron.db :as aeron-db]
             [jepsen.net :as net]))
 
-(defn fast-net!
+(defn reset-net!
   [test iface]
   (c/on-nodes test
     (fn [_ _]
@@ -28,7 +28,7 @@
   [nem iface dt]
   (reify nemesis/Nemesis
     (setup! [this test]
-      (fast-net! test iface)
+      (reset-net! test iface)
       (nemesis/setup! nem test)
       this)
 
@@ -39,12 +39,12 @@
 
         :stop  (try
                  (nemesis/invoke! nem test op)
-                 (finally (fast-net! test iface)))
+                 (finally (reset-net! test iface)))
 
         (nemesis/invoke! nem test op)))
 
     (teardown! [this test]
-      (fast-net! test iface)
+      (reset-net! test iface)
       (nemesis/teardown! nem test))))
 
 ;; Taken from cockroachDB's jepsen tests: https://github.com/jepsen-io/jepsen/blob/461235a04f2e9d28c8deb3c89d394dbc622f46cb/cockroachdb/src/jepsen/cockroach/nemesis.clj#L152
