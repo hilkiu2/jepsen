@@ -13,21 +13,24 @@
             [jepsen.tests :as tests]
             [jepsen.net :as net]))
 
-(defn aeron-test [opts]
+(defn aeron-test [opts hostname]
   (merge tests/noop-test
          opts
          {:name "aeron"
-          :nodes ["node0.hilkiu2-255959.cs598fts-pg0.utah.cloudlab.us"]
+          :nodes [hostname]
+          :ssh {:username "hilkiu2"
+               :strict-host-key-checking false
+               :private-key-path "/users/hilkiu2/.ssh/id_rsa_jepsen"}
           :pure-generators true
-          :db (db/db "v1.47.4")
+          :db (db/db "v1.47.4" hostname)
           :leave-db-running? false
-          :concurrency 20
+          :concurrency 1
           :client (client/->Client nil)
           ;; :nemesis (nemesis/partition-random-halves) ;; Used to soley test network partitions
-          :nemesis (aeron-nemesis/slowing (nemesis/partition-random-halves) "eno33" 0.5) ;; Used to test network partitions under a 0.5 sec delay
-          ;; :nemesis (aeron-nemesis/startstop 1)
+          ;; :nemesis (aeron-nemesis/slowing (nemesis/partition-random-halves) "eno1" 0.5) ;; Used to test network partitions under a 0.5 sec delay
+          :nemesis (aeron-nemesis/kill-random-node hostname)
           :generator  (->> (independent/concurrent-generator
-                             2 ;; keep 10-20, defines how many concurrent threads per key
+                             1 ;; defines how many concurrent threads per key
                              (range 0 10)
                              (fn [item-id]
                                (->> (gen/mix [(repeat 8 (client/bid item-id)) (repeat 2 (client/item item-id))])
@@ -53,6 +56,6 @@
   "Handles command line arguments. Can either run a test, or a web server for
   browsing results."
   [& args]
-  (cli/run! (merge (cli/single-test-cmd {:test-fn aeron-test})
+  (cli/run! (merge (cli/single-test-cmd {:test-fn aeron-test "node0.hilkiu2-256046.cs598fts.emulab.net"})
                    (cli/serve-cmd))
             args))

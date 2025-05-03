@@ -6,7 +6,7 @@
   :main jepsen.aeron
   :jvm-opts ["-Xmx8g" "-Xms512m"]
   :dependencies [[org.clojure/clojure "1.10.0"]
-                 [jepsen "0.2.1-SNAPSHOT"
+                 [jepsen "0.3.8"
                   :exclusions [org.slf4j/slf4j-log4j12
                                log4j/log4j
                                org.slf4j/log4j-over-slf4j]]

@@ -11,58 +11,41 @@
      (catch Throwable t#
        (warn "Command failed:" '~body "\nReason:" (.getMessage t#)))))
 
-(defn leader-id []
-  (let [output (-> (c/exec :bash :-c
-                           (str "java --add-opens java.base/jdk.internal.misc=ALL-UNNAMED "
-                                "-cp '/users/hilkiu2/aeron/libs/*' "
-                                "io.aeron.cluster.ClusterTool /users/hilkiu2/aeron/aeron-samples/scripts/cluster/node0/cluster list-members"))
-                   :out)]
-    (when-let [match (re-find #"leaderMemberId=(\d+)" output)]
-      (Integer/parseInt (second match)))))
-
 (defn pid-of-node [node-id]
-   (let [cmd (str "ps aux | grep '[B]asicAuctionClusteredServiceNode' | grep 'nodeId=" node-id "' | awk '{print $2}'")
-        result (c/exec :bash :-c cmd)]
-    (-> result :out str/trim))
-  )
+  (let [cmd (str "ps aux | grep '[B]asicAuctionClusteredServiceNode' | grep 'nodeId=" node-id "' | awk '{print $2}'")]
+    (-> (c/exec :bash :-c cmd))))
 
-(defn latest-leader-node-id []
-  (let [log-path "/users/hilkiu2/aeron/cluster.log"
-        cmd (str "tac " log-path
-                 " | grep -m1 'CANDIDATE -> LEADER'"
-                 " | sed -n 's/.*memberId=\\([0-9]\\+\\).*/\\1/p'")
-        result (c/exec :bash :-c cmd)]
-    (-> result :out str/trim)))
+(defn latest-leader-node-id [hostname]
+  (c/on hostname
+    (let [log-path "/users/hilkiu2/aeron/aeron-samples/scripts/cluster/logs/cluster-0.log"
+          cmd (str "tac " log-path
+                  " | stdbuf -oL grep -m1 'leaderId'"
+                  " | sed -n 's/.*leaderId=\\([0-9]\\+\\).*/\\1/p'")
+          result (c/exec :bash :-c cmd)]
+      (-> result))))
 
-(defn stop-leader! []
-  (when-let [leader (latest-leader-node-id)]
-    (let [pid (pid-of-node leader)]
-      (info "Killing leader node" leader "with PID " pid)
-      (c/exec :kill pid)
-      leader)))
-
-(defn start-node! [node-id]
+(defn start-node! [node-id hostname]
   (let [log-path "/users/hilkiu2/aeron/cluster.log"
         err-path "/users/hilkiu2/aeron/cluster.err"
-        node "node0.hilkiu2-255959.cs598fts-pg0.utah.cloudlab.us"
-        pid (pid-of-node node-id)
-        run-cmd (str "echo '\"[$(date)]\" Starting node " node-id "' >> " log-path "; "
+        run-cmd (str "export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64; export PATH=$JAVA_HOME/bin:$PATH;"
                      "./basic-auction-cluster " node-id
-                     " >> " log-path " 2>> " err-path " &")]
-
-    (info "Restarting node " node-id " with resolved PID " pid)
-    (c/on node
+                     " >> " log-path " 2>> " err-path)]
+    (c/on hostname
       (c/cd "/users/hilkiu2/aeron/aeron-samples/scripts/cluster"
-        (c/exec :bash :-c run-cmd)))))
+        (c/exec :bash :-c run-cmd)
+        ;; (c/exec :sleep "1")
+        )))) ;; 500 ms to catch up with logs after respawning
 
-(defn kill-node! [node-id nodehostname]
-  (let [pid (pid-of-node node-id)]
-    (info "Killing node " node-id " with PID " pid)
-    (c/on nodehostname
+(defn kill-node! [node-id hostname]
+  (when-let [pid (pid-of-node node-id)]
+    (c/on hostname
       (c/exec :kill :-9 pid)
-      (c/exec :sleep "2"))))
+      (c/exec :bash :-c (str "rm -rf /dev/shm/aeron-hilkiu2-" node-id "-driver"))
+      (c/exec :bash :-c (str "rm -rf /users/hilkiu2/aeron/aeron-samples/scripts/cluster/node" node-id))
+      ;; (c/exec :sleep "3") ;; 1.5 sec to elect leader once timeout detected & 2 sec to detect timeout
+      )))
 
-(defn db [version]
+(defn db [version hostname]
   (reify 
     db/DB
     (setup! [_ test node]
@@ -81,17 +64,16 @@
 
           (info "...Running the CLUSTER")
           (c/cd "/users/hilkiu2/aeron/aeron-samples/scripts/cluster"
-            (c/exec :bash :-c "echo '\nRunning cluster... ' >> /users/hilkiu2/aeron/cluster.log && echo '\nRunning cluster... ' >> /users/hilkiu2/aeron/cluster.err && export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64; export PATH=$JAVA_HOME/bin:$PATH; bash -c ./basic-auction-cluster >> /users/hilkiu2/aeron/cluster.log 2>> /users/hilkiu2/aeron/cluster.err &"))
+            (c/exec :bash :-c "echo '\nRunning cluster... ' >> /users/hilkiu2/aeron/cluster.log && echo '\nRunning cluster... ' >> /users/hilkiu2/aeron/cluster.err && export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64; export PATH=$JAVA_HOME/bin:$PATH; bash -c ./basic-auction-cluster >> /users/hilkiu2/aeron/cluster.log 2>> /users/hilkiu2/aeron/cluster.err"))
 
-          (c/exec :sleep "60")
+          ;; (c/exec :sleep "10")
 
           ;; HTTP
           (info "...Running the HTTP SERVER")
           
           (c/exec :chmod "+x" "~/setup-http.sh")
-          (c/exec :bash "~/setup-http.sh")
-        )
-    )
+          (c/exec :bash "~/setup-http.sh")))
+          
     (teardown! [_ test node]
       (info "Tearing down Aeron on" node)
 
@@ -115,25 +97,16 @@
 
       (c/exec :rm :-f "/users/hilkiu2/aeron/nodes/*")
 
-      (c/exec :sleep "15")
+      (c/exec :sleep "15"))
     
-      ;; (let [check-results
-      ;;     {:remaining-nodes    (c/exec :bash :-c "ls -1 /users/hilkiu2/aeron/aeron-samples/scripts/cluster/node* 2>/dev/null || echo NONE")
-      ;;     :remaining-shm      (c/exec :bash :-c "ls -1 /dev/shm/aeron* 2>/dev/null || echo NONE")
-      ;;     :remaining-logs     (c/exec :bash :-c "ls -1 /users/hilkiu2/aeron/aeron-samples/scripts/cluster/logs/* 2>/dev/null || echo NONE")}]
-      ;; (doseq [[label result] check-results]
-      ;;   (if (re-find #"NONE" result)
-      ;;     (info label "Clean")
-      ;;     (warn label "Still present! " result))))
-    )
+    db/Kill
+    (start! [_ test node]
+      (start-node! node hostname)
+      ;; (c/exec :sleep "10")
+      )
 
-    ;; db/Kill
-    ;; (start! [test node]
-    ;;   (start-node! node)
-    ;;   (c/exec :sleep "2"))
-
-    ;; (kill! [test node]
-    ;;   (kill-node! node))
+    (kill! [_ test node]
+      (kill-node! node hostname))
 
     db/LogFiles
     (log-files [_ test node]

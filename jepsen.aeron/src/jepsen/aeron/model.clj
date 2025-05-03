@@ -19,14 +19,14 @@
                     (if (> given-price stored-price)
                       (->AuctionModel (assoc items item-id given-price))
                       (model/inconsistent (str "Accepted bid lowered price for item " item-id
-                                              ": old price " stored-price
-                                              ", reported new winning price " given-price))))
+                                              ": old winning bid price " stored-price
+                                              ", current winning bid price from attempt " given-price))))
                   (do
                     (if (<= given-price stored-price)
                       this
                       (model/inconsistent (str "Rejected bid incorrectly for item " item-id
-                                              ": winning price " stored-price
-                                              ", reported price " given-price))))))
+                                              ": current winning bid price " stored-price
+                                              ", attempted bid price " given-price))))))
         
         :item
         (let [item-id (:id val)
@@ -34,8 +34,8 @@
               current-price (get items item-id 0)]
           (if (= winning-price current-price)
             this
-            (model/inconsistent (str "Item status stale: reported " winning-price
-                                     ", expected " current-price))))
+            (model/inconsistent (str "Item status stale: cluster winning price " winning-price
+                                     ", tracked winning price " current-price))))
 
         this))))
 
