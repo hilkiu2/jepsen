@@ -203,6 +203,15 @@
       (fn start [test node-id] (kill-node! node-id hostname) {:node node-id :action :killed})
       (fn stop [test node-id] (start-node! node-id hostname) {:node node-id :action :restarted}))))
 
+(defn flush-tc-filters!
+  [ns-name dev]
+  (try
+    ;; Deletes filters, keeps qdisc structure
+    (c/su (c/exec :bash "-c" (str "ip netns exec " ns-name " tc qdisc del dev " dev " root || true")))
+    (c/su (c/exec :bash "-c" (str "ip netns exec " ns-name " tc qdisc del dev " dev " ingress || true")))
+    (c/su (c/exec :bash "-c" (str "ip netns exec " ns-name " tc qdisc del dev " dev " clsact || true")))
+    (c/su (c/exec :bash "-c" (str "ip netns exec " ns-name " tc qdisc add dev " dev " clsact")))))
+
 ;; Adapted Jepsen's network partitioning tests to use local node with nodes in namespaces, from jepsen.nemesis and jepsen.net
 (defn setup-qdisc! [ns-name dev]
   ;; Try deleting first to avoid duplicate errors
@@ -216,15 +225,6 @@
   (c/su (c/exec :ip :netns :exec ns-name
                :tc :qdisc :add :dev dev :parent "1:4" :handle "40:" :netem))            
   (flush-tc-filters! ns-name dev))
-
-(defn flush-tc-filters!
-  [ns-name dev]
-  (try
-    ;; Deletes filters, keeps qdisc structure
-    (c/su (c/exec :bash "-c" (str "ip netns exec " ns-name " tc qdisc del dev " dev " root || true")))
-    (c/su (c/exec :bash "-c" (str "ip netns exec " ns-name " tc qdisc del dev " dev " ingress || true")))
-    (c/su (c/exec :bash "-c" (str "ip netns exec " ns-name " tc qdisc del dev " dev " clsact || true")))
-    (c/su (c/exec :bash "-c" (str "ip netns exec " ns-name " tc qdisc add dev " dev " clsact")))))
 
 (defn drop!
   [test from to]
