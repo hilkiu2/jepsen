@@ -3,6 +3,7 @@
             [dom-top.core :refer [real-pmap]]
             [jepsen.net.proto :as p :refer [Net PartitionAll]]
             [jepsen.nemesis :as nemesis]
+            [jepsen.control.net :as control.net]
             [clojure.set :as set]
             [jepsen.generator :as gen]
             [jepsen.aeron.db :as aeron-db]
@@ -213,7 +214,8 @@
                :tc :qdisc :add :dev dev :root :handle "1:" :prio :bands 4
                :priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1))
   (c/su (c/exec :ip :netns :exec ns-name
-               :tc :qdisc :add :dev dev :parent "1:4" :handle "40:" :netem)))
+               :tc :qdisc :add :dev dev :parent "1:4" :handle "40:" :netem))            
+  (flush-tc-filters! ns-name dev))
 
 (defn flush-tc-filters!
   [ns-name dev]
@@ -239,7 +241,6 @@
                     
       (c/su (c/exec :ip :netns :exec from-ns
                     :tc :filter :add :dev from-dev
-
                     :egress :protocol :ip :prio 10 :flower :src_ip (control.net/ip from-ip) :dst_ip (control.net/ip to-ip) :action :drop)))))
 
 (defn heal!

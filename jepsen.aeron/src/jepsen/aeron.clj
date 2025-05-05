@@ -30,7 +30,7 @@
           :pure-generators true
           :db (db/db "v1.47.4" hostname)
           :leave-db-running? false
-          :concurrency 20
+          :concurrency 1
           :client (client/->Client nil)
           :nemesis (aeron-nemesis/partition-random-halves) ;; Used to soley test network partitions
           ;; :nemesis (aeron-nemesis/network-delay :all 0.5) ;; Used to test 0.5 sec network delay for all nodes
@@ -41,26 +41,26 @@
           :generator (gen/phases
                         ;; Phase 1: Warmup (no nemesis)
                         (->> (independent/concurrent-generator
-                              2
+                              1
                               (range 0 10)
                               (fn [item-id]
                                 (->> (gen/mix [(repeat 8 (client/bid item-id))
                                                 (repeat 2 (client/item item-id))])
-                                      (gen/stagger 1/500))))
+                                      (gen/stagger 1/20))))
                             (gen/time-limit 10))
 
                         ;; Phase 2: Real test with nemesis
                         (->> (independent/concurrent-generator
-                              2
+                              1
                               (range 0 10)
                               (fn [item-id]
                                 (->> (gen/mix [(repeat 8 (client/bid item-id))
                                                 (repeat 2 (client/item item-id))])
-                                      (gen/stagger 1/500))))
+                                      (gen/stagger 1/20))))
                             (gen/nemesis
                               (cycle [(gen/sleep 10)
                                       {:type :info, :f :start}
-                                      (gen/sleep 30)
+                                      (gen/sleep 10)
                                       {:type :info, :f :stop}]))
                             (gen/time-limit (:time-limit opts))))
 
