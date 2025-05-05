@@ -203,7 +203,7 @@
       (fn stop [test node-id] (start-node! node-id hostname) {:node node-id :action :restarted}))))
 
 ;; Adapted Jepsen's network partitioning tests to use local node with nodes in namespaces, from jepsen.nemesis and jepsen.net
-(defn ensure-qdisc! [ns-name dev]
+(defn setup-qdisc! [ns-name dev]
   ;; Try deleting first to avoid duplicate errors
   (try
     (c/su (c/exec :ip :netns :exec ns-name :tc :qdisc :del :dev dev :root))
@@ -215,37 +215,34 @@
   (c/su (c/exec :ip :netns :exec ns-name
                :tc :qdisc :add :dev dev :parent "1:4" :handle "40:" :netem)))
 
-;; (defn flush-tc-filters!
+(defn flush-tc-filters!
   [ns-name dev]
   (try
     ;; Deletes filters, keeps qdisc structure
-    (c/su (c/exec :ip :netns :exec ns-name
-                 :tc :filter :del :dev dev :parent "1:0" :prio 1))
-    (c/su (c/exec :ip :netns :exec ns-name
-                 :tc :filter :del :dev dev :parent "1:0" :prio 2))
-    (catch Exception e
-      (warn "Failed to flush filters for" ns-name dev ":" (.getMessage e)))))
+    (c/su (c/exec :bash "-c" (str "ip netns exec " ns-name " tc qdisc del dev " dev " root || true")))
+    (c/su (c/exec :bash "-c" (str "ip netns exec " ns-name " tc qdisc del dev " dev " ingress || true")))
+    (c/su (c/exec :bash "-c" (str "ip netns exec " ns-name " tc qdisc del dev " dev " clsact || true")))
+    (c/su (c/exec :bash "-c" (str "ip netns exec " ns-name " tc qdisc add dev " dev " clsact")))))
 
-;; (defn drop!
-;;   [test from to]
-;;   (let [from-ns (:ns-name (get node->net from))
-;;         from-dev (:dev (get node->net from))
-;;         to-ip (:ip (get node->net to))]
+(defn drop!
+  [test from to]
+  (let [from-ns (:ns-name (get node->net from))
+        from-dev (:dev (get node->net from))
+        from-ip (:ip (get node->net from))
+        to-ip (:ip (get node->net to))]
 
-;;     (info "Dropping packets from" from "to" to "-> via ns" from-ns ", dev" from-dev ", to-ip" to-ip)
-;;     (c/on (first (:nodes test))
-;;       (c/su (c/exec :ip :netns :exec from-ns
-;;                     :tc :filter :add :dev from-dev
-;;                     :protocol :ip :parent "1:0" :prio 1
-;;                     :u32 :match :ip :src to-ip :flowid "1:1"))
+    (info "Dropping packets from" from "to" to "-> via ns" from-ns ", dev" from-dev ", to-ip" to-ip)
+    (c/on (first (:nodes test))
+      (c/su (c/exec :ip :netns :exec from-ns
+                    :tc :filter :add :dev from-dev
+                    :ingress :protocol :ip :prio 10 :flower :src_ip (control.net/ip to-ip) :dst_ip (control.net/ip from-ip) :action :drop))
                     
-;;       (c/su (c/exec :ip :netns :exec from-ns
-;;                     :tc :filter :add :dev from-dev
-;;                     :protocol :ip :parent "1:0" :prio 2
-;;                     :u32 :match :ip :dst to-ip :flowid "1:1"))))
-;;                     )
+      (c/su (c/exec :ip :netns :exec from-ns
+                    :tc :filter :add :dev from-dev
 
-;; (defn heal!
+                    :egress :protocol :ip :prio 10 :flower :src_ip (control.net/ip from-ip) :dst_ip (control.net/ip to-ip) :action :drop)))))
+
+(defn heal!
   [test]
   (c/on (first (:nodes test)) 
     (doseq [{:keys [ns-name dev]} (vals node->net)]
@@ -281,10 +278,10 @@
   ([grudge node-ids]
    (reify nemesis/Nemesis
      (setup! [this test]
-       ;; ensure-qdisc resets network and also sets it up with bands for isolating netwroks
+       ;; setup-qdisc resets network and also sets it up with bands for isolating netwroks
        (c/on (first (:nodes test)) 
         (doseq [{:keys [ns-name dev]} (vals node->net)]
-          (ensure-qdisc! ns-name dev)))
+          (setup-qdisc! ns-name dev)))
        this)
 
      (invoke! [this test op]
