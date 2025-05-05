@@ -11,22 +11,11 @@
       (case f
         :bid
         (let [item-id (:id val)
-              stored-price (get items item-id 0)
               given-price (:price val)
-              succeeded (:succeeded val)]
-                (if succeeded
-                  (do
-                    (if (> given-price stored-price)
-                      (->AuctionModel (assoc items item-id given-price))
-                      (model/inconsistent (str "Accepted bid lowered price for item " item-id
-                                              ": old winning bid price " stored-price
-                                              ", current winning bid price from attempt " given-price))))
-                  (do
-                    (if (<= given-price stored-price)
-                      this
-                      (model/inconsistent (str "Rejected bid incorrectly for item " item-id
-                                              ": current winning bid price " stored-price
-                                              ", attempted bid price " given-price))))))
+              stored-price (get items item-id 0)]
+          (if (> given-price stored-price)
+            (->AuctionModel (assoc items item-id given-price))
+            this))
         
         :item
         (let [item-id (:id val)

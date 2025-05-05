@@ -55,7 +55,7 @@
                 body (try
                       (json/parse-string (:body response) true)
                       (catch Exception e
-                        (warn "Failed to parse bid response JSON: " (.getMessage e))
+                        (warn "Failed to parse bid response JSON: " (.getMessage e) " " (:body response))
                         {:parse-error (.getMessage e)}))
                 {:keys [itemId price success]} body]
             (swap! winning-prices assoc itemId price)
@@ -83,7 +83,7 @@
                   body (try
                         (json/parse-string (:body response) true)
                         (catch Exception e
-                          (warn "Failed to parse item response JSON: " (.getMessage e))
+                          (warn "Failed to parse item response JSON: " (.getMessage e) " " (:body response))
                           {:parse-error (.getMessage e)}))
                   {:keys [itemId price success]} body]
               (swap! winning-prices assoc itemId price)
