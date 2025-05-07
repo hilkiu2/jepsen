@@ -33,6 +33,7 @@
         (info "...Running the HTTP CLIENT")
         (c/exec :chmod "+x" "./setup-http.sh")
         (c/exec :bash "./setup-http.sh")
+        (c/exec :sleep "5") ;; give time to set everything up
         ))
 
     (teardown! [_ test node]

@@ -32,6 +32,7 @@
 (defn loss-net!
   [test {:keys [ns-name dev]} {:keys [percent correlation]
                                :or   {percent 10 correlation 25}}]
+  (info "Packet loss on: " ns-name)
   (c/on-nodes test
     (fn [_ _]
       (c/su (c/exec :ip :netns :exec ns-name

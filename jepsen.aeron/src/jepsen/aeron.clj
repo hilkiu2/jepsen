@@ -18,45 +18,40 @@
     (merge tests/noop-test
          opts
          {:name "aeron"
-          ;; :host hostname
           :nodes [hostname]
           :ssh {:username "hilkiu2"
                 :strict-host-key-checking false
-                :private-key-path "/users/hilkiu2/.ssh/id_rsa_jepsen"
-                ;; :hosts {0 "node0.hilkiu2-256046.cs598fts.emulab.net"
-                ;;         1 "node0.hilkiu2-256046.cs598fts.emulab.net"
-                ;;         2 "node0.hilkiu2-256046.cs598fts.emulab.net"}
-                        }
+                :private-key-path "/users/hilkiu2/.ssh/id_rsa_jepsen"}
           :pure-generators true
           :db (db/db "v1.47.4" hostname)
           :leave-db-running? false
-          :concurrency 20
+          :concurrency 10 ;; default setting of 10 clients per cluster
           :client (client/->Client nil)
-          :nemesis (aeron-nemesis/partition-random-halves) ;; Used to soley test network partitions
-          ;; :nemesis (aeron-nemesis/network-delay :all 0.5) ;; Used to test 0.5 sec network delay for all nodes
-          ;; :nemesis (aeron-nemesis/network-delay :random 0.5) ;; Used to test 0.5 sec network delay for a single random node
-          ;; :nemesis (aeron-nemesis/random-packet-loss :all 10) ;; Used to test 10% packet loss for all nodes
-          ;; :nemesis (aeron-nemesis/random-packet-loss :random 25) ;; Used to test 25% packet loss for a single random node
-          ;; :nemesis (aeron-nemesis/kill-random-node hostname)
+          ;; :nemesis (aeron-nemesis/partition-random-halves) ;; Used to soley test network partitions
+          ;; :nemesis (aeron-nemesis/network-delay :all 0.5) ;; Used to test 0.1 sec network delay for all nodes
+          ;; :nemesis (aeron-nemesis/network-delay :random 0.5) ;; Used to test 0.1 sec network delay for a single random node
+          ;; :nemesis (aeron-nemesis/random-packet-loss :all 15) ;; Used to test 15% packet loss for all nodes
+          ;; :nemesis (aeron-nemesis/random-packet-loss :random 50) ;; Used to test 15% packet loss for a single random node
+          :nemesis (aeron-nemesis/kill-random-node hostname)
           :generator (gen/phases
-                        ;; Phase 1: Warmup (no nemesis)
+                        ;; warmup (no nemesis)
                         (->> (independent/concurrent-generator
-                              2
+                              1
                               (range 0 10)
                               (fn [item-id]
                                 (->> (gen/mix [(repeat 8 (client/bid item-id))
                                                 (repeat 2 (client/item item-id))])
-                                      (gen/stagger 1/500))))
+                                      (gen/stagger 1/200))))
                             (gen/time-limit 10))
 
-                        ;; Phase 2: Real test with nemesis
+                        ;; test with nemesis
                         (->> (independent/concurrent-generator
-                              2
+                              1
                               (range 0 10)
                               (fn [item-id]
                                 (->> (gen/mix [(repeat 8 (client/bid item-id))
                                                 (repeat 2 (client/item item-id))])
-                                      (gen/stagger 1/500))))
+                                      (gen/stagger 1/200))))
                             (gen/nemesis
                               (cycle [(gen/sleep 5)
                                       {:type :info, :f :start}

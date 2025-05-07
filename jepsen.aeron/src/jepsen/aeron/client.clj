@@ -62,16 +62,20 @@
             (assoc op :type :ok :value (independent/tuple itemId {:id itemId :price price :succeeded success}))))
         (catch Exception e
           (warn "Exception caught placing bid: " (.getMessage e))
-          (let [data (ex-data e)]
+          (let [data (ex-data e)
+                msg-str (.getMessage e)
+                parsed-msg (try
+                     (:message (json/parse-string msg-str true))
+                     (catch Exception _ nil))]
             (cond
               (= (:status data) 504)
               (assoc op :type :fail :error :timeout)
 
               (some? data)
-              (assoc op :type :fail :error :unknown)
+              (assoc op :type :fail :error :unknown :message parsed-msg)
 
               :else
-              (assoc op :type :fail :error :unknown)))))
+              (assoc op :type :fail :error :unknown :message parsed-msg)))))
 
 
         :item
@@ -90,16 +94,20 @@
               (assoc op :type :ok :value (independent/tuple itemId {:id itemId :price price :succeeded success}))))
           (catch Exception e
             (warn "Exception caught querying item: " (.getMessage e))
-            (let [data (ex-data e)]
-              (cond
-                (= (:status data) 504)
-                (assoc op :type :fail :error :timeout)
+            (let [data (ex-data e)
+                msg-str (.getMessage e)
+                parsed-msg (try
+                     (:message (json/parse-string msg-str true))
+                     (catch Exception _ nil))]
+            (cond
+              (= (:status data) 504)
+              (assoc op :type :fail :error :timeout)
 
-                (some? data)
-                (assoc op :type :fail :error :unknown)
+              (some? data)
+              (assoc op :type :fail :error :unknown :message parsed-msg)
 
-                :else
-                (assoc op :type :fail :error :unknown))))))))
+              :else
+              (assoc op :type :fail :error :unknown :message parsed-msg))))))))
 
 
   (teardown! [this test])  
