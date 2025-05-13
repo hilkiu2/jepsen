@@ -250,18 +250,6 @@
     (doseq [{:keys [ns-name dev]} (vals node->net)]
         (flush-tc-filters! ns-name dev))))
 
-;; (defn drop! [net test src dest]
-;;       (on-nodes test [dest]
-;;                 (fn [test node]
-;;                   (su (exec :iptables :-A :INPUT :-s (control.net/ip src) :-j
-;;                             :DROP :-w)))))
-
-;; (defn heal! [net test]
-;;   (with-test-nodes test
-;;     (su
-;;       (exec :iptables :-F :-w)
-;;       (exec :iptables :-X :-w))))
-
 (defn drop-all!
   "Takes a test and a grudge: a map of nodes to collections of nodes they
   should drop messages from, and makes those changes to the test's network."
