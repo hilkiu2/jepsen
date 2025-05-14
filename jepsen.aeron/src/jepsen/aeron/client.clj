@@ -58,8 +58,13 @@
                         (warn "Failed to parse bid response JSON: " (.getMessage e))
                         {:parse-error (.getMessage e)}))
                 {:keys [itemId price success]} body]
-            (swap! winning-prices assoc itemId price)
-            (assoc op :type :ok :value (independent/tuple itemId {:id itemId :price price :succeeded success}))))
+            (if (and itemId price (contains? body :success))
+                (do
+                  (swap! winning-prices assoc itemId price)
+                  (assoc op :type :ok :value (independent/tuple itemId {:id itemId :price price :succeeded success})))
+                (do
+                  (warn "Leader Failure, can cause inconsitencies: " body)
+                  (assoc op :type :fail :error :leader-failure :message body)))))
         (catch Exception e
           (warn "Exception caught placing bid: " (.getMessage e))
           (let [data (ex-data e)
@@ -90,8 +95,13 @@
                           (warn "Failed to parse item response JSON: " (.getMessage e))
                           {:parse-error (.getMessage e)}))
                   {:keys [itemId price success]} body]
-              (swap! winning-prices assoc itemId price)
-              (assoc op :type :ok :value (independent/tuple itemId {:id itemId :price price :succeeded success}))))
+              (if (and itemId price (contains? body :success))
+                (do
+                  (swap! winning-prices assoc itemId price)
+                  (assoc op :type :ok :value (independent/tuple itemId {:id itemId :price price :succeeded success})))
+                (do
+                  (warn "Leader Failure, can cause inconsitencies: " body)
+                  (assoc op :type :fail :error :leader-failure :message body)))))
           (catch Exception e
             (warn "Exception caught querying item: " (.getMessage e))
             (let [data (ex-data e)
